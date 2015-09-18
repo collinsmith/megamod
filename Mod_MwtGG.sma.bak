@@ -1,0 +1,152 @@
+#include <amxmodx>
+#include <amxmisc>
+#include <fakemeta_util>
+#include <bitsum>
+
+static const Plugin [] = "Man with the Golden Gun";
+static const Author [] = "Tirant";
+static const Version[] = "0.0.1";
+
+#define MAX_PLAYERS 32
+#define GOLDEN_GUN CSW_DEAGLE
+
+static const g_szGoldenGunV[] = "models/megamod/MwtGG/v_deagle.mdl";
+static const g_szGoldenGunP[] = "models/megamod/MwtGG/p_deagle.mdl";
+static g_szGoldenGun[32];
+
+static g_iGoldenGun;
+ 
+static g_bPlayerNonSpawnEvent;
+static g_iFwFmClientCommandPost;
+
+public plugin_precache() {
+	precache_model(g_szGoldenGunV);
+	precache_model(g_szGoldenGunP);
+}
+
+public plugin_init() {
+	register_plugin(Plugin, Version, Author);
+	
+	register_clcmd("fullupdate", "fwCmdClFullupdate");
+	
+	register_event("DeathMsg", 	"ev_playerDeath", "a", "1>0");
+	register_event("CurWeapon", 	"ev_curWeapon", "be","1=1");
+	register_event("AmmoX", 	"ev_AmmoX", "be", "1=1", "1=2", "1=3", "1=4", "1=5", "1=6", "1=7", "1=8", "1=9", "1=10")
+	
+	register_event("ResetHUD", "fwEvResetHUD", "b");
+	register_event("TextMsg", "fwEvGameWillRestartIn", "a", "2=#Game_will_restart_in");
+	
+	get_weaponname(GOLDEN_GUN, g_szGoldenGun, charsmax(g_szGoldenGun));
+}
+
+public client_connect(id) {
+	if (!g_iGoldenGun) {
+		selectNewRandomGunman();
+	}
+}
+
+public client_disconnect(id) {
+	if (id == g_iGoldenGun) {
+		selectNewRandomGunman();
+	}
+}
+
+public ev_playerDeath() {
+	new iKiller = read_data(1);
+	new iVictim = read_data(2);
+	
+	if (iVictim == g_iGoldenGun) {
+		setNewGunman(iKiller);
+	}
+}
+
+public ev_curWeapon(id) {
+	if (id != g_iGoldenGun || read_data(2) != GOLDEN_GUN) {
+		return PLUGIN_CONTINUE;
+	}
+	
+	set_pev(id, pev_viewmodel, 	engfunc(EngFunc_AllocString, g_szGoldenGunV));
+	set_pev(id, pev_weaponmodel, 	engfunc(EngFunc_AllocString, g_szGoldenGunP));
+	return PLUGIN_CONTINUE;
+}
+
+public ev_AmmoX(id) {
+	set_pdata_int(id, 376 + read_data(1), 200, 5);
+}
+
+selectNewRandomGunman() {
+	removeOldGunman();
+	new iPlayers[32], iCount;
+	get_players(iPlayers, iCount, "a");
+	if (!iCount) {
+		set_task(1.0, "selectNewRandomGunman");
+	} else {	
+		setNewGunman(iPlayers[random_num(0, iCount-1)]);
+	}
+}
+
+setNewGunman(id) {
+	if (is_user_alive(g_iGoldenGun)) {
+		removeOldGunman();
+	}
+		
+	fm_strip_user_weapons(id);
+	fm_give_item(id, "weapon_knife");
+	fm_give_item(id, g_szGoldenGun);
+	fm_set_user_rendering(id, kRenderFxGlowShell, 218, 165, 32, kRenderNormal, 5)
+	
+	g_iGoldenGun = id;
+	set_hudmessage(255, 255, 255, -1.0, -1.0, 0, 0.0, 6.0, 0.0, 0.0, 1);
+	show_hudmessage(id, "You have the Golden Gun!");
+}
+
+removeOldGunman() {
+	if (g_iGoldenGun) {
+		fm_strip_user_weapons(g_iGoldenGun);
+		fm_give_item(g_iGoldenGun, "weapon_knife");
+		fm_give_item(g_iGoldenGun, "weapon_usp");
+		fm_set_user_rendering(g_iGoldenGun);
+		
+		set_hudmessage(255, 255, 255, -1.0, -1.0, 0, 0.0, 6.0, 0.0, 0.0, 1);
+		show_hudmessage(g_iGoldenGun, "You have lost the Golden Gun!");
+	}
+}
+
+public fwEvResetHUD(iPlayerId) {
+        if (!is_user_alive(iPlayerId))
+                return
+ 
+        if (g_bPlayerNonSpawnEvent[iPlayerId]) {
+                g_bPlayerNonSpawnEvent[iPlayerId] = false
+                return
+        }
+ 
+        fwPlayerSpawn(iPlayerId)
+}
+ 
+public fwEvGameWillRestartIn() {
+        static iPlayers[32], iPlayersNum, i
+        get_players(iPlayers, iPlayersNum, "a")
+        for (i = 0; i < iPlayersNum; ++i)
+                g_bPlayerNonSpawnEvent[iPlayers[i]] = true
+}
+ 
+public fwCmdClFullupdate(iPlayerId) {
+        g_bPlayerNonSpawnEvent[iPlayerId] = true
+        static const szFwFmClientCommandPost[] = "fwFmClientCommandPost"
+        g_iFwFmClientCommandPost = register_forward(FM_ClientCommand, szFwFmClientCommandPost, 1)
+        return PLUGIN_CONTINUE
+}
+ 
+public fwFmClientCommandPost(iPlayerId) {
+        unregister_forward(FM_ClientCommand, g_iFwFmClientCommandPost, 1)
+        g_bPlayerNonSpawnEvent[iPlayerId] = false
+        return FMRES_HANDLED
+}
+ 
+public fwPlayerSpawn(iPlayerId) {
+        // player spawned
+}  
+/* AMXX-Studio Notes - DO NOT MODIFY BELOW HERE
+*{\\ rtf1\\ ansi\\ deff0{\\ fonttbl{\\ f0\\ fnil Tahoma;}}\n\\ viewkind4\\ uc1\\ pard\\ lang1033\\ f0\\ fs16 \n\\ par }
+*/

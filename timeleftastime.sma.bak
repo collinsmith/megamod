@@ -1,0 +1,28 @@
+
+#include <amxmodx>
+
+#define PLUGIN    "Timeleft as Roundtime"
+#define AUTHOR    "AcidoX (idea), Arkshine and joaquimandrade"
+#define VERSION    "1.2"
+
+new gMsgidShowTimer;
+
+public plugin_init ()
+{
+    register_plugin( PLUGIN, VERSION, AUTHOR);
+    register_cvar( "TimeleftRoundtime",VERSION,FCVAR_SERVER|FCVAR_SPONLY )
+    register_message( get_user_msgid( "RoundTime" ),"Event_RoundTime" );
+    register_event( "BombDrop", "Event_BombDropped", "a", "4=1" );                        
+    gMsgidShowTimer = get_user_msgid( "ShowTimer" );
+}
+
+public Event_RoundTime( const MsgId, const MsgDest, const MsgEnt )
+{
+    set_msg_arg_int( 1, ARG_SHORT, get_timeleft() );
+}
+
+public Event_BombDropped ()
+{
+    message_begin( MSG_BROADCAST, gMsgidShowTimer );
+    message_end();
+}

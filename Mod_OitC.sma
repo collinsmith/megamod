@@ -1,0 +1,192 @@
+#include <amxmodx>
+#include <amxmisc>
+#include <fakemeta_util>
+#include <hamsandwich>
+#include <cstrike>
+#include <csdm>
+#include <colorchat>
+#include <round_terminator>
+
+static const Plugin [] = "One in the Chamber";
+static const Author [] = "Tirant";
+static const Version[] = "0.0.1";
+
+#define null -1
+#define MAX_PLAYERS 32
+#define OitC_WEAPON CSW_P228
+#define NUM_LIVES 3
+#define EXTRA_BULLET 1
+#define TASK_DELAY 150000
+
+static g_iMaxPlayers;
+
+static g_szOitCWeapon[32];
+
+static const g_szKnifeKill [] = "megamod/OitC/knife_kill.wav";
+static const g_szPlayerElim[] = "megamod/OitC/player_elim.wav";
+static const g_szRoundEnd  [] = "megamod/OitC/round_win.wav";
+static const g_szBulletGain[] = "megamod/OitC/bullet_gained.wav";
+
+static g_iWinner = null;
+static g_iRespawns[MAX_PLAYERS+1];
+
+public plugin_precache() {
+	precache_sound(g_szKnifeKill);
+	precache_sound(g_szPlayerElim);
+	precache_sound(g_szRoundEnd);
+	precache_sound(g_szBulletGain);
+}
+
+public plugin_init() {
+	register_plugin(Plugin, Version, Author);
+		
+	register_event("HLTV", 		"ev_RoundStart", "a", "1=0", "2=0");
+	register_event("SendAudio", 	"ev_RoundDraw" , "a", "%!MRAD_rounddraw");
+	
+	register_message(get_user_msgid("TextMsg"), "msgRoundEnd");
+		
+	RegisterHam(Ham_TakeDamage, "player", "ham_TakeDamage");
+	
+	get_weaponname(OitC_WEAPON, g_szOitCWeapon, charsmax(g_szOitCWeapon));
+	
+	g_iMaxPlayers = get_maxplayers();
+}
+
+public ev_RoundStart() {
+	arrayset(g_iRespawns, NUM_LIVES, MAX_PLAYERS+1);
+}
+
+public ev_RoundDraw() {
+	return PLUGIN_HANDLED;
+}
+
+public msgRoundEnd(const MsgId, const MsgDest, const MsgEntity) {
+	static szMessage[128];
+	get_msg_arg_string(2, szMessage, charsmax(szMessage))
+	
+	if (equal(szMessage, "#Round_Draw")) {
+		static szPlayerName[32];
+		get_user_name(g_iWinner, szPlayerName, charsmax(szPlayerName));
+		set_hudmessage(255, 255, 255, -1.0, -1.0, 0, 0.0, 6.0, 0.1, 0.2, 1)
+		show_hudmessage(0, "%s has won the round!", szPlayerName)
+		set_msg_arg_string(2, "")
+		g_iWinner = null;
+		return PLUGIN_HANDLED
+	}
+	
+	return PLUGIN_CONTINUE;
+}
+
+public client_connect(id) {
+	//g_iRespawns[id] = NUM_LIVES;
+	remove_task(TASK_DELAY+id);
+}
+
+public client_disconnect(id) {
+	//g_iRespawns[id] = NUM_LIVES;
+	remove_task(TASK_DELAY+id);
+}
+
+public csdm_RoundRestart() {
+	arrayset(g_iRespawns, NUM_LIVES, MAX_PLAYERS+1);
+}
+
+public csdm_PostDeath(iKiller, iVictim, iHeadshot, const szWeapon[]) {
+	if (iKiller != iVictim && is_user_connected(iKiller)) {
+		set_hudmessage(255, 255, 255, -1.0, 0.45, 0, 0.0, 3.0, 0.0, 0.0, 1);
+		show_hudmessage(iKiller, "+%d Bullet!", EXTRA_BULLET);
+		cs_set_user_bpammo(iKiller, OitC_WEAPON, cs_get_user_bpammo(iKiller, OitC_WEAPON)+EXTRA_BULLET);
+		client_cmd(iKiller, "spk %s", g_szBulletGain);
+	
+		if (equal(g_szKnifeKill, "knife")) {
+			client_cmd(0, "spk %s", g_szKnifeKill);
+		}
+	}
+	
+	if (g_iRespawns[iVictim] > 0) {
+		g_iRespawns[iVictim]--;
+		
+		new iPlayers[32], iCount;
+		get_players(iPlayers, iCount, "a");
+		if (iCount < 2) {
+			get_players(iPlayers, iCount, "b");
+			new j = iCount;
+			for (new i = 0; i < iCount; i++) {
+				if (g_iRespawns[iPlayers[i]] > 0) {
+					j--;
+				}
+			}
+			
+			if (j == iCount) {
+				g_iWinner = iKiller;
+				TerminateRound(RoundEndType_Draw);
+			}
+		}
+		
+		if (g_iRespawns[iVictim] < 1) {
+			new szPlayerName[32];
+			get_user_name(iVictim, szPlayerName, charsmax(szPlayerName));
+			set_hudmessage(0, 255, 255, -1.0, 0.4, 0, 0.0, 6.0, 0.0, 0.0, 2);
+			show_hudmessage(0, "%s has been eliminated!", szPlayerName);
+			client_print_color(0, DontChange, "^4%s ^3has been eliminated!", szPlayerName);
+			client_cmd(0, "spk %s", g_szPlayerElim);
+			return PLUGIN_HANDLED;
+		}
+	}
+	
+	return PLUGIN_CONTINUE;
+}
+
+public csdm_PreSpawn(id, bool:bIsFake) {
+	if (g_iRespawns[id] > 0) {
+		client_print_color(id, DontChange, "^4You have %d respawns remaining", g_iRespawns[id]-1);
+		if (g_iRespawns[id]-1 == 0) {
+			set_hudmessage(255, 255, 255, -1.0, 0.4, 0, 0.0, 6.0, 0.0, 0.0, 1);
+			show_hudmessage(id, "You're on your last life.^nMake it count!");
+		}
+		
+		return PLUGIN_CONTINUE;
+	} else {
+		return PLUGIN_HANDLED;
+	}
+	
+	return PLUGIN_CONTINUE;
+}
+
+public csdm_PostSpawn(id) {
+	set_task(0.5, "giveWeapons", TASK_DELAY+id);
+}
+
+public giveWeapons(taskid) {
+	taskid -= TASK_DELAY;
+	fm_strip_user_weapons(taskid);
+	fm_give_item(taskid, "weapon_knife");
+	fm_give_item(taskid, g_szOitCWeapon);
+}
+
+public ham_TakeDamage(iVictim, iUseless, iAttacker, Float:flDamage, damageBits) {
+	if (!is_user_connected(iAttacker)) {
+		return HAM_HANDLED;
+	}
+	
+	static iGun;
+	if (iUseless <= g_iMaxPlayers && iUseless != 0) {
+		iGun = get_user_weapon(iAttacker);
+	} else {
+		static classname[32];
+		pev(iUseless, pev_classname, classname, charsmax(classname));
+		if (equal(classname,"grenade")) {
+			iGun = 4;
+		} else if (!iUseless) {
+			iGun = 2;
+		}
+	}
+	
+	if (iGun != OitC_WEAPON) {
+		return HAM_IGNORED;
+	}
+	
+	SetHamParamFloat(4,flDamage*100.0);
+	
+	return HAM_HANDLED;
+}
